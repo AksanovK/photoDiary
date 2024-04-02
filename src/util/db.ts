@@ -5,6 +5,7 @@ import {
 } from 'react-native-sqlite-storage';
 
 const tableName = 'todoData';
+const photosTableName = 'todoItemPhotos';
 
 enablePromise(true);
 
@@ -22,15 +23,22 @@ export const getDBConnection = async () => {
 };
 
 export const createTable = async (db: SQLiteDatabase) => {
-  const query = `CREATE TABLE IF NOT EXISTS ${tableName}(
+  const createTodoDataTableQuery = `CREATE TABLE IF NOT EXISTS ${tableName}(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT NOT NULL,
         name TEXT NOT NULL,
-        value TEXT,
-        photos TEXT
+        value TEXT
     );`;
 
-  await db.executeSql(query);
+  const createTodoItemPhotosTableQuery = `CREATE TABLE IF NOT EXISTS ${photosTableName}(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        todoItemId INTEGER,
+        photoPath TEXT,
+        FOREIGN KEY(todoItemId) REFERENCES ${tableName}(id) ON DELETE CASCADE
+    );`;
+
+  await db.executeSql(createTodoDataTableQuery);
+  await db.executeSql(createTodoItemPhotosTableQuery);
 
   const countQuery = `SELECT COUNT(*) as count FROM ${tableName}`;
   const result = await db.executeSql(countQuery);
@@ -44,59 +52,24 @@ export const createTable = async (db: SQLiteDatabase) => {
       name: 'Добро пожаловать!',
       value:
         'Сегодня вы начали пользоваться прекрасным приложением, поздравляем!',
-      photos: '../../assets/images/welcome.png,../../assets/images/smiley.png',
     };
     await db.executeSql(
-      `INSERT INTO ${tableName} (date, name, value, photos) VALUES (?, ?, ?, ?)`,
-      [
-        initialData.date,
-        initialData.name,
-        initialData.value,
-        initialData.photos,
-      ],
+      `INSERT INTO ${tableName} (date, name, value) VALUES (?, ?, ?)`,
+      [initialData.date, initialData.name, initialData.value],
     );
-  }
-};
-
-export const getDiaryItems = async (
-  db: SQLiteDatabase,
-): Promise<DiaryItem[]> => {
-  try {
-    const todoItems: DiaryItem[] = [];
-    const results = await db.executeSql(
-      `SELECT id, date, name, value, photos FROM ${tableName}`,
-    );
-    results.forEach(result => {
-      for (let index = 0; index < result.rows.length; index++) {
-        todoItems.push(result.rows.item(index));
-      }
-    });
-    return todoItems;
-  } catch (error) {
-    console.error(error);
-    throw Error('Failed to get todoItems!');
-  }
-};
-
-export const findDiaryItemsByDate = async (
-  db: SQLiteDatabase,
-  date: string,
-): Promise<DiaryItem[]> => {
-  try {
-    const todoItems: DiaryItem[] = [];
-    const results = await db.executeSql(
-      `SELECT id, date, name, value, photos FROM ${tableName} WHERE date = ?`,
-      [date],
-    );
-    results.forEach(result => {
-      for (let index = 0; index < result.rows.length; index++) {
-        todoItems.push(result.rows.item(index));
-      }
-    });
-    return todoItems;
-  } catch (error) {
-    console.error(error);
-    throw Error('Failed to find diary items by date!');
+    const selectLastInsertIdQuery = 'SELECT last_insert_rowid() as id';
+    const selectResult = await db.executeSql(selectLastInsertIdQuery);
+    const todoItemId = selectResult[0].rows.item(0).id;
+    const photosPaths = [
+      '../../assets/images/welcome.png',
+      '../../assets/images/smiley.png',
+    ];
+    for (const photoPath of photosPaths) {
+      await db.executeSql(
+        `INSERT INTO ${photosTableName} (todoItemId, photoPath) VALUES (?, ?)`,
+        [todoItemId, photoPath],
+      );
+    }
   }
 };
 
@@ -129,17 +102,28 @@ export const getDiaryItemById = async (
 ): Promise<DiaryItem | null> => {
   try {
     const results = await db.executeSql(
-      `SELECT id, date, name, value, photos FROM ${tableName} WHERE id = ?`,
+      `SELECT id, date, name, value FROM ${tableName} WHERE id = ?`,
       [id],
     );
     if (results[0].rows.length > 0) {
       const row = results[0].rows.item(0);
+      const photosResults = await db.executeSql(
+        `SELECT photoPath FROM ${photosTableName} WHERE todoItemId = ?`,
+        [id],
+      );
+      const photos: string[] = [];
+      for (let i = 0; i < photosResults[0].rows.length; i++) {
+        const photoRow = photosResults[0].rows.item(i);
+        if (photoRow) {
+          photos.push(photoRow.photoPath);
+        }
+      }
       return {
         id: row.id,
         date: row.date,
         name: row.name,
         value: row.value,
-        photos: row.photos,
+        photos: photos.join(','),
       };
     } else {
       return null;
@@ -150,38 +134,110 @@ export const getDiaryItemById = async (
   }
 };
 
-export const insertTodoItem = async (db: SQLiteDatabase, newEvent: any) => {
-  const insertQuery = `INSERT INTO ${tableName}(date, name, value, photos) VALUES (?, ?, ?, ?)`;
-  const {date, name, value, photos} = newEvent;
-  await db.executeSql(insertQuery, [date, name, value, photos]);
-};
-
-export const updateTodoItem = async (db: SQLiteDatabase, newEvent: any) => {
-  const updateQuery = `UPDATE ${tableName} SET name = ?, value = ?, photos = ? WHERE id = ?`;
-  const {id, name, value, photos} = newEvent;
-  await db.executeSql(updateQuery, [name, value, photos, id]);
-};
-
-export const saveTodoItems = async (
+export const insertTodoItem = async (
   db: SQLiteDatabase,
-  todoItems: DiaryItem[],
+  newEvent: any,
+): Promise<number> => {
+  const insertQuery = `INSERT INTO ${tableName}(date, name, value) VALUES (?, ?, ?)`;
+  const {date, name, value} = newEvent;
+  try {
+    const [result] = await db.executeSql(insertQuery, [date, name, value]);
+    return result.insertId;
+  } catch (error) {
+    console.error('Error inserting todo item:', error);
+    throw error;
+  }
+};
+
+export const insertPhotosForTodoItem = async (
+  db: SQLiteDatabase,
+  todoItemId: number,
+  photos: string[],
 ) => {
-  const insertQuery =
-    `INSERT OR REPLACE INTO ${tableName}(date, name, value, photos) VALUES` +
-    todoItems
-      .map(i => `('${i.date}', '${i.name}', '${i.value}', '${i.photos}')`)
-      .join(',');
+  const photoInsertQuery = `INSERT INTO ${photosTableName}(todoItemId, photoPath) VALUES (?, ?)`;
 
-  return db.executeSql(insertQuery);
+  try {
+    for (const photo of photos) {
+      await db.executeSql(photoInsertQuery, [todoItemId, photo]);
+    }
+  } catch (error) {
+    console.error('Error inserting photos for todo item:', error);
+    throw error;
+  }
 };
 
-export const deleteTodoItem = async (db: SQLiteDatabase, id: number) => {
-  const deleteQuery = `DELETE FROM ${tableName} WHERE id = ${id}`;
-  await db.executeSql(deleteQuery);
+export const updateTodoItem = async (
+  db: SQLiteDatabase,
+  updatedEvent: any,
+): Promise<void> => {
+  const updateQuery = `UPDATE ${tableName} SET name = ?, value = ? WHERE id = ?`;
+  const {id, name, value} = updatedEvent;
+  try {
+    await db.executeSql(updateQuery, [name, value, id]);
+  } catch (error) {
+    console.error('Error updating todo item:', error);
+    throw error;
+  }
 };
 
-export const deleteTable = async (db: SQLiteDatabase) => {
-  const query = `DROP TABLE IF EXISTS ${tableName}`;
+export const updatePhotosForTodoItem = async (
+  db: SQLiteDatabase,
+  todoItemId: number,
+  photos: string[],
+): Promise<void> => {
+  const deleteQuery = `DELETE FROM ${photosTableName} WHERE todoItemId = ?`;
+  const photoInsertQuery = `INSERT INTO ${photosTableName}(todoItemId, photoPath) VALUES (?, ?)`;
 
-  await db.executeSql(query);
+  try {
+    await db.executeSql(deleteQuery, [todoItemId]);
+
+    for (const photo of photos) {
+      await db.executeSql(photoInsertQuery, [todoItemId, photo]);
+    }
+  } catch (error) {
+    console.error('Error updating photos for todo item:', error);
+    throw error;
+  }
+};
+
+export const deletePhotoForTodoItem = async (
+  db: SQLiteDatabase,
+  photoId: number,
+): Promise<void> => {
+  const deleteQuery = `DELETE FROM ${photosTableName} WHERE id = ?`;
+  try {
+    await db.executeSql(deleteQuery, [photoId]);
+  } catch (error) {
+    console.error('Error deleting photo for todo item:', error);
+    throw error;
+  }
+};
+
+export const deletePhotosForTodoItem = async (
+  db: SQLiteDatabase,
+  todoItemId: number,
+): Promise<void> => {
+  const deleteQuery = `DELETE FROM ${photosTableName} WHERE todoItemId = ?`;
+  try {
+    await db.executeSql(deleteQuery, [todoItemId]);
+  } catch (error) {
+    console.error('Error deleting photos for todo item:', error);
+    throw error;
+  }
+};
+
+export const deleteTodoItemAndPhotos = async (
+  db: SQLiteDatabase,
+  id: number,
+): Promise<void> => {
+  await db.transaction(async tx => {
+    try {
+      await deletePhotosForTodoItem(db, id);
+      const deleteQuery = `DELETE FROM ${tableName} WHERE id = ?`;
+      await tx.executeSql(deleteQuery, [id]);
+    } catch (error) {
+      console.error('Error deleting todo item and its photos:', error);
+      throw error;
+    }
+  });
 };

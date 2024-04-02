@@ -13,10 +13,14 @@ import {
 import {
   getDBConnection,
   getDiaryItemById,
+  insertPhotosForTodoItem,
   insertTodoItem,
+  updatePhotosForTodoItem,
   updateTodoItem,
 } from '../util/db';
 import * as ImagePicker from 'react-native-image-picker';
+import fs from 'react-native-fs';
+import * as Buffer from 'buffer';
 
 export class EditEventScreen extends Component {
   state = {
@@ -59,6 +63,12 @@ export class EditEventScreen extends Component {
           eventPhotos,
           isLoading: false,
         });
+        // AWS.config.update({
+        //   accessKeyId: 'YCAJEayiBYosMW1kh-QHh2OQO',
+        //   secretAccessKey: 'YCMK-VAYpU9N1e3gMFw_zo4By52O6pgnI9uWcMeu',
+        //   region: 'ru-central1',
+        //   endpoint: 'https://storage.yandexcloud.net',
+        // });
       } catch (error) {
         console.error(error);
         this.setState({isLoading: false});
@@ -73,31 +83,36 @@ export class EditEventScreen extends Component {
   onBackPress = async () => {
     const {isCreating} = this.props.route.params;
     const {eventDate, eventName, eventDescription, eventPhotos} = this.state;
-    if (isCreating) {
-      try {
-        const db = await getDBConnection();
-        const newEvent = {
-          date: eventDate,
-          name: eventName,
-          value: eventDescription,
-          photos: eventPhotos.join(','),
-        };
-        await insertTodoItem(db, newEvent);
-      } catch (error) {
-        console.error(error);
-      }
-    } else {
-      try {
-        const db = await getDBConnection();
-        const updatedEvent = {
-          id: this.state.event.id,
-          name: eventName,
-          value: eventDescription,
-          photos: eventPhotos.join(','),
-        };
-        await updateTodoItem(db, updatedEvent);
-      } catch (error) {
-        console.error(error);
+    if (eventName !== '') {
+      if (isCreating) {
+        try {
+          const db = await getDBConnection();
+          const newEvent = {
+            date: eventDate,
+            name: eventName,
+            value: eventDescription,
+          };
+          let eventId;
+          eventId = await insertTodoItem(db, newEvent);
+          if (eventPhotos.length > 0) {
+            await insertPhotosForTodoItem(db, eventId, eventPhotos);
+          }
+        } catch (error) {
+          console.error(error);
+        }
+      } else {
+        try {
+          const db = await getDBConnection();
+          const updatedEvent = {
+            id: this.state.event.id,
+            name: eventName,
+            value: eventDescription,
+          };
+          await updateTodoItem(db, updatedEvent);
+          await updatePhotosForTodoItem(db, this.state.event.id, eventPhotos);
+        } catch (error) {
+          console.error(error);
+        }
       }
     }
     const {date} = this.props.route.params;
@@ -115,7 +130,44 @@ export class EditEventScreen extends Component {
   };
 
   takePhoto = async () => {
-    console.log('PHOTO');
+    const options = {
+      mediaType: 'photo',
+      quality: 1,
+    };
+    try {
+      const response = await ImagePicker.launchCamera(options);
+      if (!response.didCancel && !response.error) {
+        const newPhoto = response.assets[0].uri;
+        if (newPhoto.trim() !== '') {
+          const AWS = require('aws-sdk');
+          const s3 = new AWS.S3({
+            accessKeyId: 'YCAJEayiBYosMW1kh-QHh2OQO',
+            secretAccessKey: 'YCMK-VAYpU9N1e3gMFw_zo4By52O6pgnI9uWcMeu',
+            region: 'ru-central1',
+            endpoint: 'https://storage.yandexcloud.net',
+          });
+          const uploadParams = {
+            Bucket: 's3-k4z4k',
+            Key: `${Date.now()}.jpg`,
+            Body: newPhoto,
+          };
+          const uploadResult = await s3.upload(uploadParams).promise();
+          this.setState(prevState => ({
+            event: {
+              ...prevState.event,
+              photos: [...prevState.eventPhotos, uploadResult.Location].join(
+                ',',
+              ),
+            },
+            eventPhotos: [...prevState.eventPhotos, uploadResult.Location],
+          }));
+        } else {
+          console.log('Пустой путь к фотографии. Фотография не добавлена.');
+        }
+      }
+    } catch (error) {
+      console.error('Ошибка при съемке фотографии:', error);
+    }
   };
 
   chooseFromGallery = async () => {
@@ -124,18 +176,44 @@ export class EditEventScreen extends Component {
       quality: 1,
     };
     this.removePhotoPressListener();
-
-    await ImagePicker.launchImageLibrary(options, response => {
+    ImagePicker.launchImageLibrary(options, async response => {
       if (!response.didCancel && !response.error) {
         const newPhoto = response.assets[0].uri;
         if (newPhoto.trim() !== '') {
-          this.setState(prevState => ({
-            event: {
-              ...prevState.event,
-              photos: [...prevState.eventPhotos, newPhoto].join(','),
-            },
-            eventPhotos: [...prevState.eventPhotos, newPhoto],
-          }));
+          const fileContent = await fs.readFile(newPhoto, 'base64');
+          const AWS = require('aws-sdk');
+          const s3 = new AWS.S3({
+            accessKeyId: 'YCAJEayiBYosMW1kh-QHh2OQO',
+            secretAccessKey: 'YCMK-VAYpU9N1e3gMFw_zo4By52O6pgnI9uWcMeu',
+            region: 'ru-central1',
+            endpoint: 'https://storage.yandexcloud.net',
+          });
+          const uploadParams = {
+            Bucket: 's3-k4z4k',
+            Key: `${Date.now()}.jpg`,
+            Body: Buffer.Buffer.from(fileContent, 'base64'),
+            ContentType: 'image/jpeg',
+          };
+          s3.upload(uploadParams, (err, data) => {
+            if (err) {
+              console.log('Ошибка загрузки:', err);
+            } else {
+              this.setState(prevState => ({
+                event: {
+                  ...prevState.event,
+                  photos: [...prevState.eventPhotos, data.Location].join(','),
+                },
+                eventPhotos: [...prevState.eventPhotos, data.Location],
+              }));
+            }
+          });
+          // this.setState(prevState => ({
+          //   event: {
+          //     ...prevState.event,
+          //     photos: [...prevState.eventPhotos, newPhoto].join(','),
+          //   },
+          //   eventPhotos: [...prevState.eventPhotos, newPhoto],
+          // }));
         } else {
           console.log('Пустой путь к фотографии. Фотография не добавлена.');
         }
@@ -171,7 +249,12 @@ export class EditEventScreen extends Component {
     ) : (
       <View style={styles.container}>
         <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={styles.modalBackground} />
+          <View
+            style={[
+              styles.modalBackground,
+              {display: this.state.isModalVisible ? 'flex' : 'none'},
+            ]}
+          />
           <View style={styles.header}>
             <TouchableOpacity onPress={this.onBackPress.bind(this)}>
               <Image
@@ -184,18 +267,20 @@ export class EditEventScreen extends Component {
             </View>
           </View>
           <Modal
-            animationType="slide"
+            animationType="fade"
             transparent={true}
             visible={this.state.isModalVisible}
             onRequestClose={this.closePhotoModal}>
             <View style={styles.modalContainer}>
               <View style={styles.modalContent}>
-                <TouchableOpacity onPress={this.onBackPress.bind(this)}>
-                  <Image
-                    source={require('../../assets/images/back.png')}
-                    style={styles.closeButton}
-                  />
-                </TouchableOpacity>
+                <View style={styles.headerView}>
+                  <TouchableOpacity onPress={this.closePhotoModal}>
+                    <Image
+                      source={require('../../assets/images/close.png')}
+                      style={styles.closeButton}
+                    />
+                  </TouchableOpacity>
+                </View>
                 <Text style={styles.modalTitle}>Выберите режим</Text>
                 <TouchableOpacity
                   style={styles.modalButton}
@@ -287,7 +372,13 @@ export class EditEventScreen extends Component {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 20,
+  },
+  headerView: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    alignSelf: 'flex-end',
+    marginTop: 30,
   },
   loadingContainer: {
     flex: 1,
@@ -316,13 +407,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'white',
-    width: 366,
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{translateX: -173}, {translateY: -148}],
+    width: 346,
     height: 296,
+    backgroundColor: 'white',
     borderRadius: 10,
     padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalBackground: {
     position: 'absolute',
@@ -330,7 +425,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'transparent',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   modalButtonText: {
     fontSize: 14,
@@ -338,14 +433,15 @@ const styles = StyleSheet.create({
     color: 'white',
   },
   modalTitle: {
-    fontSize: 14,
+    fontSize: 18,
     fontFamily: 'Montserrat-Bold',
     color: '#0029FF',
+    marginTop: 20,
     marginBottom: 40,
   },
   modalButton: {
     marginBottom: 40,
-    width: 312,
+    width: 300,
     height: 47,
     borderRadius: 30,
     backgroundColor: 'blue',

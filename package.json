@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "android": "react-native run-android",
+    "android": "react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res && react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
@@ -11,9 +11,13 @@
   },
   "dependencies": {
     "@react-native-community/masked-view": "^0.1.11",
+    "aws-amplify": "^6.0.26",
+    "aws-sdk": "^2.1590.0",
+    "buffer": "^6.0.3",
     "react": "18.2.0",
     "react-native": "0.73.6",
     "react-native-calendars": "^1.1304.1",
+    "react-native-fs": "^2.20.0",
     "react-native-gesture-handler": "^2.15.0",
     "react-native-image-picker": "^7.1.2",
     "react-native-permissions": "^4.1.5",

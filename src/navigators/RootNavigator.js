@@ -1,7 +1,5 @@
 import * as React from 'react';
 import {createStackNavigator} from '@react-navigation/stack';
-import {PersonListScreen} from '../screens/PersonListScreen';
-import {PersonInfoScreen} from '../screens/PersonInfoScreen';
 import {SelectedDayScreen} from '../screens/SelectedDayScreen';
 import {CalendarScreen} from '../screens/CalendarScreen';
 import {EditEventScreen} from '../screens/EditEventScreen';
@@ -34,8 +32,6 @@ export const RootNavigator = () => {
         component={SelectedEventScreen}
         options={{headerShown: false}}
       />
-      <Stack.Screen name={'list'} component={PersonListScreen} />
-      <Stack.Screen name={'info'} component={PersonInfoScreen} />
     </Stack.Navigator>
   );
 };

@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import {getDBConnection, findDiaryItemNamesByDate} from '../util/db';
 import {EventListItem} from '../components/EventListItem';
-import {PERMISSIONS, request} from "react-native-permissions";
+import {PERMISSIONS, request} from 'react-native-permissions';
 
 export class SelectedDayScreen extends Component {
   state = {
@@ -84,7 +84,7 @@ export class SelectedDayScreen extends Component {
   };
 
   componentDidMount = () => {
-    this.requestPermissions();
+    this.requestPermissions().then(r => console.log('123'));
     this.onRefresh();
   };
 
@@ -103,7 +103,9 @@ export class SelectedDayScreen extends Component {
       if (storagePermission === 'granted') {
         console.log('Разрешение на доступ к хранилищу получено');
       } else {
-        console.log('Отказано в разрешении на доступ к хранилищу');
+        console.log(
+          'Отказано в разрешении на доступ к хранилищу ' + storagePermission,
+        );
       }
     } catch (error) {
       console.error('Ошибка запроса разрешений:', error);
