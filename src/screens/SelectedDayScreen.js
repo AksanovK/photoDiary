@@ -84,7 +84,7 @@ export class SelectedDayScreen extends Component {
   };
 
   componentDidMount = () => {
-    this.requestPermissions().then(r => console.log('123'));
+    this.requestPermissions().then(r => console.log('---'));
     this.onRefresh();
   };
 

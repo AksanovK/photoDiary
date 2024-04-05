@@ -139,6 +139,7 @@ export class EditEventScreen extends Component {
       if (!response.didCancel && !response.error) {
         const newPhoto = response.assets[0].uri;
         if (newPhoto.trim() !== '') {
+          const fileContent = await fs.readFile(newPhoto, 'base64');
           const AWS = require('aws-sdk');
           const s3 = new AWS.S3({
             accessKeyId: 'YCAJEayiBYosMW1kh-QHh2OQO',
@@ -149,18 +150,22 @@ export class EditEventScreen extends Component {
           const uploadParams = {
             Bucket: 's3-k4z4k',
             Key: `${Date.now()}.jpg`,
-            Body: newPhoto,
+            Body: Buffer.Buffer.from(fileContent, 'base64'),
+            ContentType: 'image/jpeg',
           };
-          const uploadResult = await s3.upload(uploadParams).promise();
-          this.setState(prevState => ({
-            event: {
-              ...prevState.event,
-              photos: [...prevState.eventPhotos, uploadResult.Location].join(
-                ',',
-              ),
-            },
-            eventPhotos: [...prevState.eventPhotos, uploadResult.Location],
-          }));
+          s3.upload(uploadParams, (err, data) => {
+            if (err) {
+              console.log('Ошибка загрузки:', err);
+            } else {
+              this.setState(prevState => ({
+                event: {
+                  ...prevState.event,
+                  photos: [...prevState.eventPhotos, data.Location].join(','),
+                },
+                eventPhotos: [...prevState.eventPhotos, data.Location],
+              }));
+            }
+          });
         } else {
           console.log('Пустой путь к фотографии. Фотография не добавлена.');
         }
@@ -207,13 +212,6 @@ export class EditEventScreen extends Component {
               }));
             }
           });
-          // this.setState(prevState => ({
-          //   event: {
-          //     ...prevState.event,
-          //     photos: [...prevState.eventPhotos, newPhoto].join(','),
-          //   },
-          //   eventPhotos: [...prevState.eventPhotos, newPhoto],
-          // }));
         } else {
           console.log('Пустой путь к фотографии. Фотография не добавлена.');
         }

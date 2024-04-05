@@ -4,12 +4,9 @@
         android:name="android.hardware.camera"
         android:required="false" />
     <uses-permission android:name="android.permission.INTERNET" />
-
-    <!-- Разрешение на использование камеры -->
     <uses-permission android:name="android.permission.CAMERA" />
-
-    <!-- Разрешение на запись во внешнее хранилище -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <application
         android:name=".MainApplication"
